@@ -2,14 +2,14 @@
 
 # ============================================================
 #  setup-ring-replication.sh
-#  Topología en Anillo Multi-Master con 5 Nodos (GTID)
+#  Topología en Anillo Multi-Master con 6 Nodos (GTID)
 #
-#  Forma el anillo: PC1 → PC2 → PC3 → PC4 → PC5 → PC1
+#  Forma el anillo: PC1 → PC2 → PC3 → PC4 → PC5 → PC6 → PC1
 #  Cada nodo replica del nodo anterior en el anillo.
 #
 #  Prerrequisitos:
-#    - Los 5 contenedores deben estar corriendo en sus PCs.
-#    - El archivo .env debe existir con las 5 IPs configuradas.
+#    - Los 6 contenedores deben estar corriendo en sus PCs.
+#    - El archivo .env debe existir con las 6 IPs configuradas.
 #    - mysql-client instalado en la máquina que ejecuta este script.
 #
 #  Uso: ./setup-ring-replication.sh
@@ -38,7 +38,7 @@ fi
 source "$ENV_FILE"
 
 # --- Validar que todas las IPs estén definidas ---
-REQUIRED_VARS=(NODE1_IP NODE2_IP NODE3_IP NODE4_IP NODE5_IP MYSQL_PORT ADMIN_USER ADMIN_PASSWORD REPL_USER REPL_PASSWORD)
+REQUIRED_VARS=(NODE1_IP NODE2_IP NODE3_IP NODE4_IP NODE5_IP NODE6_IP MYSQL_PORT ADMIN_USER ADMIN_PASSWORD REPL_USER REPL_PASSWORD)
 for var in "${REQUIRED_VARS[@]}"; do
     if [ -z "${!var:-}" ]; then
         echo -e "${RED}❌ Error: La variable ${var} no está definida en .env${NC}"
@@ -49,18 +49,19 @@ done
 # --- Definir el anillo ---
 # Formato: NODO_IPS[índice]=IP_del_nodo
 # Formato: RING_SOURCE[índice]=IP_de_quien_replica (nodo anterior en el anillo)
-declare -a NODO_IPS=("$NODE1_IP" "$NODE2_IP" "$NODE3_IP" "$NODE4_IP" "$NODE5_IP")
-declare -a RING_SOURCE=("$NODE5_IP" "$NODE1_IP" "$NODE2_IP" "$NODE3_IP" "$NODE4_IP")
-# PC1 replica de PC5 (cierra el anillo)
+declare -a NODO_IPS=("$NODE1_IP" "$NODE2_IP" "$NODE3_IP" "$NODE4_IP" "$NODE5_IP" "$NODE6_IP")
+declare -a RING_SOURCE=("$NODE6_IP" "$NODE1_IP" "$NODE2_IP" "$NODE3_IP" "$NODE4_IP" "$NODE5_IP")
+# PC1 replica de PC6 (cierra el anillo)
 # PC2 replica de PC1
 # PC3 replica de PC2
 # PC4 replica de PC3
 # PC5 replica de PC4
+# PC6 replica de PC5
 
-# Puertos por nodo: NODE3 y NODE4 usan 3307, el resto usa MYSQL_PORT
-declare -a NODO_PORTS=("$MYSQL_PORT" "$MYSQL_PORT" "3307" "3307" "$MYSQL_PORT")
+# Puertos por nodo: todos usan MYSQL_PORT
+declare -a NODO_PORTS=("$MYSQL_PORT" "$MYSQL_PORT" "$MYSQL_PORT" "$MYSQL_PORT" "$MYSQL_PORT" "$MYSQL_PORT")
 # Puertos del source (nodo anterior en el anillo) para cada réplica
-declare -a RING_SOURCE_PORTS=("$MYSQL_PORT" "$MYSQL_PORT" "$MYSQL_PORT" "3307" "3307")
+declare -a RING_SOURCE_PORTS=("$MYSQL_PORT" "$MYSQL_PORT" "$MYSQL_PORT" "$MYSQL_PORT" "$MYSQL_PORT" "$MYSQL_PORT")
 
 # --- Función: ejecutar MySQL en un nodo remoto ---
 exec_mysql() {
@@ -79,17 +80,17 @@ exec_mysql_raw() {
 }
 
 # ============================================================
-#  FASE 1: Verificar conectividad a los 5 nodos
+#  FASE 1: Verificar conectividad a los 6 nodos
 # ============================================================
 echo -e "${CYAN}============================================================${NC}"
 echo -e "${CYAN}  🔗 Topología en Anillo — Configuración de Replicación${NC}"
-echo -e "${CYAN}  PC1 → PC2 → PC3 → PC4 → PC5 → PC1${NC}"
+echo -e "${CYAN}  PC1 → PC2 → PC3 → PC4 → PC5 → PC6 → PC1${NC}"
 echo -e "${CYAN}============================================================${NC}"
 echo ""
 
-echo -e "${YELLOW}📡 Fase 1: Verificando conectividad a los 5 nodos...${NC}"
+echo -e "${YELLOW}📡 Fase 1: Verificando conectividad a los 6 nodos...${NC}"
 
-for i in {0..4}; do
+for i in {0..5}; do
     NODE_NUM=$((i + 1))
     IP="${NODO_IPS[$i]}"
     N_PORT="${NODO_PORTS[$i]}"
@@ -135,7 +136,7 @@ echo ""
 # ============================================================
 echo -e "${YELLOW}🛑 Fase 3: Deteniendo replicación existente en todos los nodos...${NC}"
 
-for i in {0..4}; do
+for i in {0..5}; do
     NODE_NUM=$((i + 1))
     IP="${NODO_IPS[$i]}"
     N_PORT="${NODO_PORTS[$i]}"
@@ -152,13 +153,13 @@ echo ""
 echo -e "${YELLOW}🔄 Fase 4: Configurando enlaces de replicación del anillo...${NC}"
 echo ""
 
-for i in {0..4}; do
+for i in {0..5}; do
     NODE_NUM=$((i + 1))
     REPLICA_IP="${NODO_IPS[$i]}"
     REPLICA_PORT="${NODO_PORTS[$i]}"
     SOURCE_IP="${RING_SOURCE[$i]}"
     SOURCE_PORT="${RING_SOURCE_PORTS[$i]}"
-    SOURCE_NUM=$(( (i + 4) % 5 + 1 ))  # Nodo anterior en el anillo
+    SOURCE_NUM=$(( (i + 5) % 6 + 1 ))  # Nodo anterior en el anillo
 
     echo -e "   ${CYAN}Nodo $NODE_NUM ($REPLICA_IP:$REPLICA_PORT) ← replica de ← Nodo $SOURCE_NUM ($SOURCE_IP:$SOURCE_PORT)${NC}"
 
@@ -187,7 +188,7 @@ echo ""
 # ============================================================
 echo -e "${YELLOW}▶️  Fase 5: Iniciando replicación en todos los nodos...${NC}"
 
-for i in {0..4}; do
+for i in {0..5}; do
     NODE_NUM=$((i + 1))
     IP="${NODO_IPS[$i]}"
     N_PORT="${NODO_PORTS[$i]}"
@@ -211,11 +212,11 @@ echo ""
 
 ALL_OK=true
 
-for i in {0..4}; do
+for i in {0..5}; do
     NODE_NUM=$((i + 1))
     IP="${NODO_IPS[$i]}"
     N_PORT="${NODO_PORTS[$i]}"
-    SOURCE_NUM=$(( (i + 4) % 5 + 1 ))
+    SOURCE_NUM=$(( (i + 5) % 6 + 1 ))
 
     echo -e "${CYAN}--- Nodo $NODE_NUM ($IP:$N_PORT) — replica de Nodo $SOURCE_NUM ---${NC}"
 
@@ -274,7 +275,7 @@ sleep 15
 
 # Verificar en cada nodo
 echo ""
-for i in {0..4}; do
+for i in {0..5}; do
     NODE_NUM=$((i + 1))
     IP="${NODO_IPS[$i]}"
     N_PORT="${NODO_PORTS[$i]}"
@@ -301,17 +302,17 @@ if [ "$ALL_OK" = true ]; then
     echo -e ""
     echo -e "  Topología activa:"
     echo -e "  ${CYAN}PC1 (${NODO_IPS[0]}) → PC2 (${NODO_IPS[1]}) → PC3 (${NODO_IPS[2]})${NC}"
-    echo -e "  ${CYAN}→ PC4 (${NODO_IPS[3]}) → PC5 (${NODO_IPS[4]}) → PC1${NC}"
+    echo -e "  ${CYAN}→ PC4 (${NODO_IPS[3]}) → PC5 (${NODO_IPS[4]}) → PC6 (${NODO_IPS[5]}) → PC1${NC}"
 else
     echo -e "${RED}  ⚠️  ANILLO CONFIGURADO CON ADVERTENCIAS${NC}"
     echo -e "${YELLOW}  Revisa los errores anteriores y verifica:${NC}"
-    echo -e "${YELLOW}    1. Que los 5 contenedores estén corriendo${NC}"
+    echo -e "${YELLOW}    1. Que los 6 contenedores estén corriendo${NC}"
     echo -e "${YELLOW}    2. Que las IPs en .env sean correctas${NC}"
-    echo -e "${YELLOW}    3. Que el firewall permita puertos ${MYSQL_PORT} y 3307${NC}"
+    echo -e "${YELLOW}    3. Que el firewall permita el puerto ${MYSQL_PORT}${NC}"
     echo -e "${YELLOW}    4. Ejecuta en cada nodo: SHOW REPLICA STATUS\\G${NC}"
 fi
 echo -e "${CYAN}============================================================${NC}"
 echo ""
-echo -e "Comandos útiles para monitoreo (usar puerto 3307 para PC3/PC4):"
+echo -e "Comandos útiles para monitoreo:"
 echo -e "  ${CYAN}mysql -h <IP> -P <PUERTO> -u$ADMIN_USER -p$ADMIN_PASSWORD -e 'SHOW REPLICA STATUS\\G'${NC}"
 echo -e "  ${CYAN}mysql -h <IP> -P <PUERTO> -u$ADMIN_USER -p$ADMIN_PASSWORD -e 'SELECT * FROM ring_db.test_ring;'${NC}"

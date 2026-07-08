@@ -1,0 +1,29 @@
+# ============================================================
+#  PC6 — MySQL Nodo 6 (Master/Replica)
+#  Ejecutar en la computadora física que alojará el Nodo 6.
+#  NO define MYSQL_DATABASE (la BD llega vía replicación).
+#  Requiere: .env con las credenciales y variables de red.
+# ============================================================
+
+services:
+  mysql-node6:
+    image: mysql:8.0
+    container_name: mysql-node6
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql_data_node6:/var/lib/mysql
+      - ./mysql-node6/my.cnf:/etc/mysql/conf.d/my.cnf:ro
+      - ./mysql-node6/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    command: --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "--silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mysql_data_node6:

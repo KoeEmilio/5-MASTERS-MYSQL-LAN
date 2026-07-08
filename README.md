@@ -1,6 +1,6 @@
-# 🔄 Replicación MySQL en Anillo Multi-Master con Docker (5 Nodos)
+# 🔄 Replicación MySQL en Anillo Multi-Master con Docker (6 Nodos)
 
-Sistema de bases de datos MySQL con **Topología en Anillo (Ring Replication)** completamente dockerizado y distribuido en **5 computadoras físicas** dentro de la misma red local (LAN). Cada nodo funciona simultáneamente como **Maestro y Esclavo**, utilizando **GTID** para identificación global de transacciones.
+Sistema de bases de datos MySQL con **Topología en Anillo (Ring Replication)** completamente dockerizado y distribuido en **6 computadoras físicas** dentro de la misma red local (LAN). Cada nodo funciona simultáneamente como **Maestro y Esclavo**, utilizando **GTID** para identificación global de transacciones.
 
 ## 📐 Arquitectura
 
@@ -27,13 +27,13 @@ Sistema de bases de datos MySQL con **Topología en Anillo (Ring Replication)** 
                    │ replica de                      │ replica de
                    ▼                                 │
               ┌──────────┐                      ┌──────────┐
-              │   PC4    │─────────────────────▶│          │
-              │ sid=4    │    replica de         │  (PC5)   │
+              │   PC4    │─────────────────────▶│   PC5    │
+              │ sid=4    │    replica de         │          │
               │ off=4    │                      │          │
               └──────────┘                      └──────────┘
 ```
 
-**Flujo del anillo:** PC1 → PC2 → PC3 → PC4 → PC5 → PC1
+**Flujo del anillo:** PC1 → PC2 → PC3 → PC4 → PC5 → PC6 → PC1
 
 Un INSERT en cualquier nodo viaja por todo el anillo y se detiene automáticamente al regresar al nodo de origen (GTID previene loops infinitos).
 
@@ -50,6 +50,7 @@ MASTERS/
 ├── docker-compose-pc3.yml          # Compose para PC3
 ├── docker-compose-pc4.yml          # Compose para PC4
 ├── docker-compose-pc5.yml          # Compose para PC5
+├── docker-compose-pc6.yml          # Compose para PC6
 ├── setup-ring-replication.sh       # Script para formar el anillo
 ├── mysql-node1/
 │   ├── my.cnf                      # server-id=1, offset=1
@@ -66,6 +67,9 @@ MASTERS/
 ├── mysql-node5/
 │   ├── my.cnf                      # server-id=5, offset=5
 │   └── init.sql                    # Solo usuarios
+├── mysql-node6/
+│   ├── my.cnf                      # server-id=6, offset=6
+│   └── init.sql                    # Solo usuarios
 └── README.md
 ```
 
@@ -75,12 +79,12 @@ MASTERS/
 
 ### Prerrequisitos
 
-- **Docker** y **Docker Compose** instalados en las 5 PCs.
+- **Docker** y **Docker Compose** instalados en las 6 PCs.
 - **mysql-client** instalado en la máquina desde donde ejecutarás el script.
-- Las 5 PCs deben estar en la **misma red LAN** con conectividad entre sí.
+- Las 6 PCs deben estar en la **misma red LAN** con conectividad entre sí.
 - Puerto **3306** abierto en el firewall de cada PC.
 
-### Paso 1: Clonar el proyecto en las 5 PCs
+### Paso 1: Clonar el proyecto en las 6 PCs
 
 ```bash
 # En cada PC, clonar el repositorio
@@ -103,13 +107,14 @@ NODE2_IP=192.168.1.102    # IP real de PC2
 NODE3_IP=192.168.1.103    # IP real de PC3
 NODE4_IP=192.168.1.104    # IP real de PC4
 NODE5_IP=192.168.1.105    # IP real de PC5
+NODE6_IP=192.168.1.106    # IP real de PC6
 ```
 
-> ⚠️ **El archivo `.env` debe ser IDÉNTICO en las 5 PCs** (mismas IPs, mismas credenciales).
+> ⚠️ **El archivo `.env` debe ser IDÉNTICO en las 6 PCs** (mismas IPs, mismas credenciales).
 
 ### Paso 3: Levantar contenedores (en orden)
 
-Levantar **primero PC1**, esperar 30 segundos, luego PC2-PC5:
+Levantar **primero PC1**, esperar 30 segundos, luego PC2-PC6:
 
 ```bash
 # En PC1 (PRIMERO — inicializa la BD)
@@ -129,11 +134,14 @@ sudo docker compose -f docker-compose-pc4.yml up -d
 # En PC5
 sudo docker compose -f docker-compose-pc5.yml up -d
 
+# En PC6
+sudo docker compose -f docker-compose-pc6.yml up -d
+
 ```
 
 ### Paso 4: Formar el anillo
 
-Ejecutar desde **cualquier máquina** que tenga `mysql-client` y acceso a las 5 IPs:
+Ejecutar desde **cualquier máquina** que tenga `mysql-client` y acceso a las 6 IPs:
 
 ```bash
 chmod +x setup-ring-replication.sh
@@ -141,9 +149,9 @@ chmod +x setup-ring-replication.sh
 ```
 
 El script hará automáticamente:
-1. ✅ Verificar conectividad a los 5 nodos
+1. ✅ Verificar conectividad a los 6 nodos
 2. ✅ Verificar que `ring_db` exista en Nodo 1
-3. ✅ Configurar los 5 enlaces de replicación
+3. ✅ Configurar los 6 enlaces de replicación
 4. ✅ Iniciar replicación en todos los nodos
 5. ✅ Verificar `SHOW REPLICA STATUS`
 6. ✅ Test funcional de propagación
@@ -168,27 +176,28 @@ mysql -h 192.168.1.101 -P 3306 -uadmin_lan -padmin_secure_pass \
 
 | Parámetro | Valor | Propósito |
 |-----------|-------|-----------|
-| `server-id` | 1-5 (único por nodo) | Identificador del servidor en la replicación |
+| `server-id` | 1-6 (único por nodo) | Identificador del servidor en la replicación |
 | `gtid_mode=ON` | Todos | Identificadores globales de transacción |
 | `enforce_gtid_consistency=ON` | Todos | Garantiza operaciones seguras con GTID |
 | `log_slave_updates=ON` | Todos | **Crítico:** re-escribe al binlog los cambios recibidos por replicación, permitiendo la propagación por el anillo |
 | `binlog_format=ROW` | Todos | Formato de replicación más seguro y determinista |
-| `auto_increment_increment=5` | Todos | Distribuye los IDs auto-incrementales entre 5 nodos |
-| `auto_increment_offset=N` | 1-5 | Cada nodo genera IDs con offset distinto para evitar colisiones |
+| `auto_increment_increment=6` | Todos | Distribuye los IDs auto-incrementales entre 6 nodos |
+| `auto_increment_offset=N` | 1-6 | Cada nodo genera IDs con offset distinto para evitar colisiones |
 | `relay_log_recovery=ON` | Todos | Recuperación automática del relay log tras crash |
 | `replica_net_timeout=60` | Todos | Timeout de red para detección de desconexiones |
 
 ### Distribución de Auto-Increment
 
-Con `auto_increment_increment=5` y offsets 1-5:
+Con `auto_increment_increment=6` y offsets 1-6:
 
 | Nodo | Offset | IDs generados |
 |------|--------|---------------|
-| PC1  | 1      | 1, 6, 11, 16, 21, ... |
-| PC2  | 2      | 2, 7, 12, 17, 22, ... |
-| PC3  | 3      | 3, 8, 13, 18, 23, ... |
-| PC4  | 4      | 4, 9, 14, 19, 24, ... |
-| PC5  | 5      | 5, 10, 15, 20, 25, ... |
+| PC1  | 1      | 1, 7, 13, 19, 25, ... |
+| PC2  | 2      | 2, 8, 14, 20, 26, ... |
+| PC3  | 3      | 3, 9, 15, 21, 27, ... |
+| PC4  | 4      | 4, 10, 16, 22, 28, ... |
+| PC5  | 5      | 5, 11, 17, 23, 29, ... |
+| PC6  | 6      | 6, 12, 18, 24, 30, ... |
 
 ### Prevención de Errores GTID
 
@@ -328,7 +337,7 @@ mysql -h <IP_NODO> -P 3306 -uadmin_lan -padmin_secure_pass -e "
 # 1. Detener todos los contenedores (en cada PC)
 sudo docker compose -f docker-compose-pcX.yml down -v
 
-# 2. Levantar PC1 primero, esperar 30s, luego PC2-PC5
+# 2. Levantar PC1 primero, esperar 30s, luego PC2-PC6
 # 3. Ejecutar setup-ring-replication.sh
 ```
 
@@ -343,6 +352,7 @@ sudo docker compose -f docker-compose-pcX.yml down -v
 | PC3  | 192.168.1.103 | 3306 | mysql-node3 |
 | PC4  | 192.168.1.104 | 3306 | mysql-node4 |
 | PC5  | 192.168.1.105 | 3306 | mysql-node5 |
+| PC6  | 192.168.1.106 | 3306 | mysql-node6 |
 
 **Conexión desde el host:**
 ```bash
@@ -355,7 +365,7 @@ mysql -h 192.168.1.101 -P 3306 -uadmin_lan -padmin_secure_pass
 
 1. **Escrituras simultáneas en el mismo registro:** Evitar que dos nodos modifiquen la misma fila al mismo tiempo. El anillo NO resuelve conflictos de escritura automáticamente.
 
-2. **Latencia del anillo:** Un cambio en PC1 debe viajar por 4 nodos antes de llegar a PC5. En una LAN, esto suele ser milisegundos, pero considéralo para aplicaciones críticas.
+2. **Latencia del anillo:** Un cambio en PC1 debe viajar por 5 nodos antes de llegar a PC6. En una LAN, esto suele ser milisegundos, pero considéralo para aplicaciones críticas.
 
 3. **Nodo caído:** Si un nodo se cae, el anillo se **rompe** en ese punto. Los nodos que dependen de él dejarán de recibir actualizaciones. Al restaurar el nodo, la replicación GTID se reconecta automáticamente.
 

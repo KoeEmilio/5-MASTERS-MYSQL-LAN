@@ -13,14 +13,14 @@ services:
     env_file:
       - .env
     ports:
-      - "3307:3306"
+      - "${MYSQL_PORT:-3306}:3306"
     volumes:
       - mysql_data_node3:/var/lib/mysql
       - ./mysql-node3/my.cnf:/etc/mysql/conf.d/my.cnf:ro
       - ./mysql-node3/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     command: --default-authentication-plugin=mysql_native_password
     healthcheck:
-      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "--silent" ]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "--silent"]
       interval: 10s
       timeout: 5s
       retries: 5
